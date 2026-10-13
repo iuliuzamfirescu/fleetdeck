@@ -8,14 +8,10 @@ state_file="$2"
 x="$3"
 option="$4"
 client="$5"
-move_script="$6"
-move_context="$7"
-source_id="$8"
-source_option="$9"
 
 pid_file="${state_file}.pid"
 if [[ ! -f "$pid_file" ]] || ! kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
-  setsid ~/.local/bin/tmux-bar-drag-watchdog "$state_file" "$option" "$client" "$move_script" "$move_context" "$source_id" "$source_option" > /dev/null 2>&1 < /dev/null &
+  setsid ~/.local/bin/tmux-bar-drag-watchdog "$state_file" "$client" > /dev/null 2>&1 < /dev/null &
   echo $! > "$pid_file"
 fi
 

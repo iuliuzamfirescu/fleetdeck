@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Hover a dragged pane (by its title or its pill) over the window bar. The
+# middle of another window's pill marks that window to move the pane into
+# (@paneDropWin). The outer quarter of any pill, or the empty bar after the
+# last one, marks a gap to open a new window in (@paneDropWinBefore, a window
+# id or END), drawn with the same insertion marker as a window reorder.
+set -euo pipefail
+
+#
+# Runs on every mouse motion over the bar and blocks that client's mouse
+# queue while it runs, so it calls tmux only when the target changes.
+#
+#   tmux-window-bar-drop <session> <mouse x> <current window> <@paneDropWin> <@paneDropWinBefore> <client>
+
+sess="$1"
+x="$2"
+src_win="$3"
+cur_join="$4"
+cur_before="$5"
+client="$6"
+
+spans_file="/tmp/tmux-window-bar-spans-${sess}"
+[[ -f "$spans_file" ]] || exit 0
+read -ra spans < "$spans_file"
+
+join=""
+before="END"
+for i in "${!spans[@]}"; do
+  entry="${spans[$i]}"
+  id="${entry%%:*}"
+  rest="${entry#*:}"
+  start="${rest%%:*}"
+  end="${rest#*:}"
+  (( x < end )) || continue
+  # each span ends with the one-column gap before the next pill
+  edge=$(( (end - start) / 4 ))
+  (( edge > 0 )) || edge=1
+  if (( x < start + edge )); then
+    before="$id"
+  elif (( x >= end - 1 - edge )); then
+    before="END"
+    (( i + 1 < ${#spans[@]} )) && before="${spans[$((i+1))]%%:*}"
+  else
+    before=""
+    # dropping a pane onto its own window would change nothing
+    [[ "$id" != "$src_win" ]] && join="$id"
+  fi
+  break
+done
+
+[[ "$join" == "$cur_join" && "$before" == "$cur_before" ]] && exit 0
+
+if [[ -n "$join" ]]; then
+  tmux set -g @paneDropWin "$join" \; set -gu @paneDropWinBefore \; refresh-client -S -t "$client"
+elif [[ -n "$before" ]]; then
+  tmux set -gu @paneDropWin \; set -g @paneDropWinBefore "$before" \; refresh-client -S -t "$client"
+else
+  tmux set -gu @paneDropWin \; set -gu @paneDropWinBefore \; refresh-client -S -t "$client"
+fi

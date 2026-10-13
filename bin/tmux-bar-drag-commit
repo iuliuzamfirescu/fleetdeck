@@ -1,29 +1,32 @@
 #!/usr/bin/env bash
-# Commit whatever drag is in progress (pane or window), wherever the mouse
-# was actually released, on the bar, over pane content, or a border.
-# Shared by every release-catching binding so there's one place this logic
-# lives, regardless of which surface the release lands on.
+# Commit whatever bar drag is in progress (pane pill or window pill), wherever
+# the mouse was released. The only commit path: the release bindings and
+# tmux-bar-drag-watchdog both call it. The drag state is read and cleared in
+# one tmux command list, which tmux runs atomically, so whichever caller comes
+# second finds no drag and does nothing.
 set -euo pipefail
 
-window_id="$1"
-session_name="$2"
-client="$3"
+client="$1"
 
-commit_drag() {
-  local source_option="$1" target_option="$2" move_script="$3" move_context="$4" state_file="$5"
-  local src tgt
-  src="$(tmux show -g -v "$source_option" 2>/dev/null || true)"
-  [[ -n "$src" ]] || return 1
-  tgt="$(tmux show -g -v "$target_option" 2>/dev/null || true)"
-  if [[ -n "$tgt" && "$tgt" != "$src" ]]; then
-    "$move_script" "$move_context" "$src" "$tgt" || true
+IFS='|' read -r src_pane insert_pane src_win insert_win drop_win drop_before < <(
+  tmux display -p '#{@dragSourcePane}|#{@dragInsertBefore}|#{@dragSourceWin}|#{@dragInsertBeforeWin}|#{@paneDropWin}|#{@paneDropWinBefore}' \
+    \; set -gu @dragSourcePane \; set -gu @dragInsertBefore \
+    \; set -gu @dragSourceWin \; set -gu @dragInsertBeforeWin \
+    \; set -gu @paneDropWin \; set -gu @paneDropWinBefore
+)
+
+if [[ -n "$src_pane" ]]; then
+  pane_win="$(tmux display -p -t "$src_pane" '#{window_id}' 2>/dev/null || true)"
+  if [[ -n "$pane_win" && -n "$drop_win" ]]; then
+    ~/.local/bin/tmux-pane-to-window "$src_pane" join "$drop_win"
+  elif [[ -n "$pane_win" && -n "$drop_before" ]]; then
+    ~/.local/bin/tmux-pane-to-window "$src_pane" new "$drop_before"
+  elif [[ -n "$pane_win" && -n "$insert_pane" && "$insert_pane" != "$src_pane" ]]; then
+    ~/.local/bin/tmux-pane-bar-move "$pane_win" "$src_pane" "$insert_pane"
   fi
-  rm -f "$state_file" "${state_file}.pid"
-  tmux set -gu "$source_option" \; set -gu "$target_option" \; refresh-client -S -t "$client"
-}
+elif [[ -n "$src_win" && -n "$insert_win" && "$insert_win" != "$src_win" ]]; then
+  sess="$(tmux display -p -t "$src_win" '#{session_name}' 2>/dev/null || true)"
+  [[ -n "$sess" ]] && ~/.local/bin/tmux-window-bar-move "$sess" "$src_win" "$insert_win"
+fi
 
-commit_drag @dragSourcePane @dragInsertBefore ~/.local/bin/tmux-pane-bar-move "$window_id" \
-  "/tmp/tmux-pane-bar-insert-${window_id}" && exit 0
-
-commit_drag @dragSourceWin @dragInsertBeforeWin ~/.local/bin/tmux-window-bar-move "$session_name" \
-  "/tmp/tmux-window-bar-insert-${session_name}" || true
+tmux refresh-client -S -t "$client" 2>/dev/null || true

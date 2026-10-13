@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Move a pane out of its window, and follow it. Shared by the title drag and
+# the pill drag.
+#
+#   tmux-pane-to-window <pane> join <window>      new full-height column at that window's right edge
+#   tmux-pane-to-window <pane> new <window|END>   new window of its own, placed before that window or last
+set -euo pipefail
+
+src="$1"
+mode="$2"
+dst="$3"
+
+src_win="$(tmux display -p -t "$src" '#{window_id}')"
+[[ "$mode" == new || "$src_win" != "$dst" ]] || exit 0
+
+# drop the pane from its old window's pill order now rather than leaving the
+# stale id for tmux-pane-bar to prune whenever that window is next drawn
+order="$(tmux show -w -t "$src_win" -v @paneOrder 2>/dev/null || true)"
+remaining=()
+for id in $order; do
+  [[ "$id" != "$src" ]] && remaining+=("$id")
+done
+tmux set -w -t "$src_win" @paneOrder "${remaining[*]}"
+
+case "$mode" in
+  join)
+    tmux join-pane -h -f -s "$src" -t "$dst"
+    ;;
+  new)
+    if [[ "$dst" == END ]]; then
+      last="$(tmux list-windows -t "$src" -F '#{window_id}' | tail -1)"
+      tmux break-pane -a -s "$src" -t "$last"
+    else
+      tmux break-pane -b -s "$src" -t "$dst"
+    fi
+    ;;
+esac
+
+# moving out the last pane closes its old window, whose span file nothing reads anymore
+if ! tmux list-windows -a -F '#{window_id}' | grep -qxF "$src_win"; then
+  rm -f "/tmp/tmux-pane-bar-spans-${src_win}" "/tmp/tmux-pane-bar-insert-${src_win}"
+fi

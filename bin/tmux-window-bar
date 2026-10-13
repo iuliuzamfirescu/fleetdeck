@@ -7,6 +7,8 @@ set -euo pipefail
 
 sess="$1"
 insert_before="${2:-}"
+# window a dragged pane would move into on release, see tmux-window-bar-drop
+drop_win="${3:-}"
 
 mapfile -t lines < <(tmux list-windows -t "$sess" -F "#{window_id}|#{window_index}|#{window_active}|#{window_name}")
 
@@ -34,7 +36,9 @@ for line in "${lines[@]}"; do
   spans+="${id}:${col}:$(( col + width )) "
   col=$(( col + width ))
 
-  if [[ "$active" == "1" ]]; then
+  if [[ "$id" == "$drop_win" ]]; then
+    style='#{@pill_drop_target}'
+  elif [[ "$active" == "1" ]]; then
     style='#{@pill_working_active}'
     (( window_has_idle_claude )) && style='#{@pill_idle_active}'
   elif (( window_has_idle_claude )); then

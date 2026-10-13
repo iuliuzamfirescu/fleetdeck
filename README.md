@@ -12,6 +12,8 @@ A tmux + Ghostty setup for running several Claude Code sessions side by side, on
 - `bin/tmux-pane-bar`, custom-rendered pane tab bar, same
 - `bin/tmux-pane-bar-move`, `bin/tmux-window-bar-move`, reorder helpers the bars call on drop
 - `bin/tmux-bar-drag-update`, `bin/tmux-bar-drag-watchdog`, `bin/tmux-bar-drag-commit`, the drag machinery both bars share
+- `bin/tmux-pane-drag`, `bin/tmux-pane-drag-hover`, drag a pane by its title: swap it with another pane, or drop it on the window bar
+- `bin/tmux-window-bar-drop`, `bin/tmux-pane-to-window`, a pane (dragged by title or pill) dropped on the window bar moves into that window or opens as a new one
 - `bin/tmux-continuum-loop`, runs the tmux-continuum plugin's save check on its own timer instead of on every status redraw
 - `bin/tmux-claude-idle-loop`, polls every claude pane and highlights the ones waiting for input, in both bars and as a pane background/border tint
 - `bin/tmux-resurrect-save-panenames`, `bin/tmux-resurrect-restore-panenames`, resurrect hooks so pane renames survive a session restore, which resurrect's own save format has no slot for
@@ -28,7 +30,7 @@ chmod +x ~/.local/bin/claude-fleet ~/.local/bin/ghostty-theme-cycle ~/.local/bin
 jq -s ".[0] * .[1]" ~/.claude/settings.json claude-hooks.json > /tmp/claude-settings.json && mv /tmp/claude-settings.json ~/.claude/settings.json
 ```
 
-Requirements: `tmux` 3.3 or newer (for `range=pane` support in status-format, needed for the clickable pane bar), Ghostty, `xdotool` (theme cycling and window geometry), `xinput` (release detection for drag and drop, see below). `xinput` ships with most X11 desktops already; check with `which xinput`.
+Requirements: `tmux` 3.3 or newer (for `range=pane` support in status-format, needed for the clickable pane bar), Ghostty, `xdotool` (theme cycling and window geometry), `xinput` (release detection for drag and drop, see below), `python3` and `xprop` (hover highlight while dragging a pane by its title). `xinput` and `xprop` ship with most X11 desktops already; check with `which xinput xprop`. Dragging a pane by its title also needs `range=control` support in `pane-border-format`; it is tested on tmux 3.7c.
 
 On Ubuntu, tmux in the default apt repos is often older than 3.3. Install a current build instead:
 
@@ -82,7 +84,16 @@ Both bars (window tabs on top, pane tabs underneath) work the same way:
 - right click a window tab for a menu (kill, rename, swap, respawn); right click a pane tab to kill it after confirming
 - click and drag an entry onto another to reorder: a marker shows exactly where it will land, insert-before-this-item on the left half of the target, insert-after on the right half, past the last item to append at the end
 
-Dragging a pane pill onto the window bar (or the reverse) does not cross-contaminate: whichever drag is actually in progress keeps driving its own bar, and the marker freezes rather than jumping to a nonsensical position while you're over the other bar's row.
+Dragging a window pill onto the pane bar does not cross-contaminate: the window drag keeps driving its own bar, and the marker freezes rather than jumping to a nonsensical position while you're over the other bar's row.
+
+Panes can also be moved by dragging, either by the name in the pane's top border or by its pill in the pane bar:
+
+- drop on another pane (title drag only) to swap the two; focus stays on the pane you dragged
+- drop on the middle of another window's pill to move the pane into that window, as a new full-height column on its right; the view follows it
+- drop on the outer quarter of any window pill, the gap between two, to open the pane as a new window there; the same insertion marker as a window reorder shows where
+- release anywhere else, or outside the terminal, to cancel
+
+While dragging a title, the dragged pane's title turns peach with a `⇄`, and the pane under the pointer gets a yellow title and a complete yellow outline. A targeted window pill turns yellow. Dropping past the last window pill does nothing, since tmux sends no mouse events for the empty bar there; drop on the right edge of the last pill to put the new window at the end.
 
 Inside a pane, clicks and ctrl+clicks go through to the app. With Claude Code's fullscreen renderer (`/tui fullscreen`), a click in the prompt moves the cursor there, and ctrl+click opens URLs and `file://` links. tmux's default ctrl+click pane swap is replaced for this.
 
@@ -108,9 +119,20 @@ tmux cannot reliably tell you when a mouse button was released. An app running i
 
 So release detection does not use tmux events at all. `tmux-bar-drag-watchdog` starts once per drag and polls the physical pointer's actual button state directly, via `xinput query-state` against every detected pointer device, roughly every 30ms. This bypasses tmux and any app's mouse mode entirely; it is asking the X server what the hardware is doing, not asking tmux what it thinks happened. The instant the button reads as released, it commits using wherever the marker last showed and cleans up, regardless of where on (or off) screen that release physically happened.
 
-`MouseDragEnd1Status`, `MouseUp1Pane` and `MouseUp1Border` also independently call the same commit logic (`tmux-bar-drag-commit`), so a release that does land somewhere tmux can see is handled instantly rather than waiting on the next poll tick. The state file both paths share means whichever one fires first wins and the other becomes a safe no-op.
+`MouseDragEnd1Status`, `MouseUp1Pane` and `MouseUp1Border` also independently call the same commit logic (`tmux-bar-drag-commit`), so a release that does land somewhere tmux can see is handled instantly. The watchdog waits half a second after the release before committing, since every snap `tmux` call takes around 80ms and a fast drag can leave tmux's mouse queue briefly behind. `tmux-bar-drag-commit` reads and clears the drag state in a single tmux command list, which tmux runs atomically, so whichever caller comes second finds no drag and does nothing. This matters for moving a pane into another window, which unlike a reorder would not be harmless to run twice.
 
 One known limitation: if a drag leaves the exact row of the bar it started on and later returns to it, tmux stops delivering drag-motion events for that gesture and never resumes, even once the cursor is back over the bar. The marker freezes at its last position rather than continuing to track the cursor. The drop still lands correctly on release, using wherever it was frozen, so this is a display quirk rather than a functional one. Fixing it fully would mean polling cursor position the same way release detection already does, translating screen pixels into terminal columns, which is a bigger change than the rest of this file represents.
+
+## How dragging a pane by its title works
+
+The name in each pane's top border sits inside `#[range=control|0]` in `pane-border-format`, so clicks on it arrive as their own `MouseDown1Control0` / `MouseDrag1Control0` / `DoubleClick1Control0` keys, separate from the rest of the border, which still resizes splits.
+
+tmux pins every drag event to the pane the drag started in, so mid-drag it never reports which pane is under the pointer: `#{pane_id}` stays the source pane, and `mouse_x`/`mouse_y` go empty outside it. Two things work around that:
+
+- The drop itself comes from tmux's release event (`MouseDragEnd1Pane` and friends), the one event that resolves to the pane actually under the pointer. On the window bar it comes from the hover state that `tmux-window-bar-drop` keeps, since status line events are never pinned.
+- The hover highlight comes from `tmux-pane-drag-hover`, which polls the X pointer and maps pixels to terminal cells. It uses the client tty's pixel size (`TIOCGWINSZ`, which Ghostty fills in) and the Ghostty window geometry, and assumes `window-padding-y` equals `window-padding-x`, as in Ghostty's defaults. It focuses the pane under the pointer, because tmux always draws borders shared with the active pane in the active style, so focusing is the only way to get a complete outline.
+
+While any pane or pill drag is in progress, `MouseDrag1Pane` and `MouseDrag1Border` do nothing, so a drag over pane content doesn't start a text selection in Claude Code or resize a split. All title drag state lives in five global options (`@paneDragSrc`, `@paneDragPrevActive`, `@paneDropTgt`, `@paneDropWin`, `@paneDropWinBefore`), cleared in the same atomic command list that reads them. A release tmux never sees (outside the window, or on the very first cell, which tmux also drops) is finished by the hover helper: it commits what is highlighted if the pointer is inside the terminal, and cancels otherwise. Any click is also a safe point to clear a leftover drag, since a press can't happen mid-drag.
 
 ## Highlighting idle Claude sessions
 

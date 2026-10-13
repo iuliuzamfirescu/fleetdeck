@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Hover feedback for tmux-pane-drag, started once per title drag.
+
+tmux pins every drag event to the pane the drag started in, so it never
+reports which pane is under the pointer. This polls the X pointer, maps it to
+a terminal cell, and focuses the pane under it. tmux then draws that pane's
+whole outline in the drop colour (pane-active-border-style while
+@paneDropTgt is set). A per-pane border style cannot do that, because
+borders shared with the active pane always take the active style.
+
+The pixel mapping only drives the highlight. The swap or move uses the pane
+or window from tmux's own release event. When tmux sees no release, this
+helper finishes the drag itself: it cancels a release outside the terminal,
+and commits what is highlighted for a release inside it (tmux reports no
+release on the very first cell, 0,0).
+
+usage: tmux-pane-drag-hover <source pane> <client>
+"""
+
+import ctypes
+import ctypes.util
+import fcntl
+import os
+import struct
+import subprocess
+import sys
+import termios
+import time
+
+# ── Tuneables ──
+POLL_S = 0.02
+# after the button goes up, wait this long for tmux's release binding to finish the drag
+# (each snap tmux call takes ~80 ms, so a fast drag can leave its mouse queue behind)
+RELEASE_GRACE_S = 0.5
+# re-check that the drag still exists every this many polls
+STATE_CHECK_EVERY = 10
+MAX_DRAG_S = 300
+BUTTON1_MASK = 1 << 8
+
+# ── tmux ──
+
+
+def tmux(*args):
+    return subprocess.run(["tmux", *args], capture_output=True, text=True).stdout.strip()
+
+
+def drag_source():
+    return tmux("show", "-gv", "@paneDragSrc")
+
+
+def finish_drag(*args):
+    subprocess.run([os.path.expanduser("~/.local/bin/tmux-pane-drag"), *args])
+
+
+def status_rows():
+    status = tmux("show", "-gv", "status")
+    lines = {"off": 0, "on": 1}[status] if status in ("off", "on") else int(status)
+    return lines, tmux("show", "-gv", "status-position") == "top"
+
+
+def panes_of(src):
+    rects = []
+    for line in tmux("list-panes", "-t", src, "-F",
+                     "#{pane_id} #{pane_left} #{pane_top} #{pane_right} #{pane_bottom}").splitlines():
+        pane_id, left, top, right, bottom = line.split()
+        # top - 1 is the row holding the pane's title
+        rects.append((pane_id, int(left), int(top) - 1, int(right), int(bottom)))
+    return rects
+
+
+def tty_pixels(tty):
+    fd = os.open(tty, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
+    try:
+        _, _, xpixel, ypixel = struct.unpack("HHHH", fcntl.ioctl(fd, termios.TIOCGWINSZ, b"\0" * 8))
+    finally:
+        os.close(fd)
+    return xpixel, ypixel
+
+# ── X11 ──
+
+
+def x_shell(*args):
+    out = subprocess.run(["xdotool", *args], capture_output=True, text=True, check=True).stdout
+    return dict(line.split("=", 1) for line in out.split())
+
+
+def frame_extents(window):
+    out = subprocess.run(["xprop", "-id", window, "_GTK_FRAME_EXTENTS"], capture_output=True, text=True).stdout
+    if "=" not in out:
+        return 0, 0, 0, 0
+    left, right, top, bottom = (int(v) for v in out.split("=", 1)[1].split(","))
+    return left, right, top, bottom
+
+
+def grid_origin(client_tty):
+    """Root-window pixel position of terminal cell (0, 0) under the pointer's window.
+
+    The tty's pixel size is the terminal area minus Ghostty's padding, with any
+    leftover pixels kept inside it at the right and bottom. So the left padding
+    is half the width difference, and the grid sits that far above the bottom
+    edge. Everything above it (header bar, tabs) does not matter. This assumes
+    window-padding-y equals window-padding-x, as in Ghostty's defaults.
+    """
+    window = x_shell("getmouselocation", "--shell")["WINDOW"]
+    geo = x_shell("getwindowgeometry", "--shell", window)
+    left, right, top, bottom = frame_extents(window)
+    x, y = int(geo["X"]) + left, int(geo["Y"]) + top
+    width, height = int(geo["WIDTH"]) - left - right, int(geo["HEIGHT"]) - top - bottom
+    xpixel, ypixel = tty_pixels(client_tty)
+    pad = (width - xpixel) / 2
+    return x + pad, y + height - pad - ypixel
+
+
+class Pointer:
+    class _Display(ctypes.Structure):
+        pass
+
+    def __init__(self):
+        self.lib = ctypes.cdll.LoadLibrary(ctypes.util.find_library("X11") or "libX11.so.6")
+        self.lib.XOpenDisplay.restype = ctypes.POINTER(self._Display)
+        self.lib.XDefaultRootWindow.restype = ctypes.c_ulong
+        self.display = self.lib.XOpenDisplay(None)
+        if not self.display:
+            raise OSError("no X display")
+        self.root = self.lib.XDefaultRootWindow(self.display)
+
+    def query(self):
+        root, child = ctypes.c_ulong(), ctypes.c_ulong()
+        rx, ry, wx, wy = (ctypes.c_int() for _ in range(4))
+        mask = ctypes.c_uint()
+        self.lib.XQueryPointer(self.display, ctypes.c_ulong(self.root), ctypes.byref(root), ctypes.byref(child),
+                               ctypes.byref(rx), ctypes.byref(ry), ctypes.byref(wx), ctypes.byref(wy),
+                               ctypes.byref(mask))
+        return rx.value, ry.value, bool(mask.value & BUTTON1_MASK)
+
+# ── Main ──
+
+
+def main():
+    src, client = sys.argv[1], sys.argv[2]
+    try:
+        pointer = Pointer()
+        tty, cell_w, cell_h, cols, rows = tmux(
+            "display", "-p", "-c", client,
+            "#{client_tty} #{client_cell_width} #{client_cell_height} #{client_width} #{client_height}").split()
+        cell_w, cell_h, cols, rows = int(cell_w), int(cell_h), int(cols), int(rows)
+        x0, y0 = grid_origin(tty)
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
+        # no X or no pixel sizes: the drag still works through tmux's release
+        # event, just without hover highlight or the outside-release cancel
+        return
+    n_status, status_on_top = status_rows()
+    rects = panes_of(src)
+    prev_active = tmux("show", "-gv", "@paneDragPrevActive") or src
+
+    hovered = None
+    on_screen = True
+    deadline = time.monotonic() + MAX_DRAG_S
+    polls = 0
+    while time.monotonic() < deadline:
+        polls += 1
+        if polls % STATE_CHECK_EVERY == 0 and drag_source() != src:
+            return
+        px, py, held = pointer.query()
+        if not held:
+            time.sleep(RELEASE_GRACE_S)
+            if drag_source() == src:
+                if on_screen:
+                    finish_drag("end", client, hovered or "")
+                else:
+                    finish_drag("cancel", client)
+            return
+
+        col, row = int((px - x0) // cell_w), int((py - y0) // cell_h)
+        on_screen = 0 <= col < cols and 0 <= row < rows
+        if status_on_top:
+            row -= n_status
+        hit = next((r[0] for r in rects if r[1] <= col <= r[3] and r[2] <= row <= r[4]), None)
+        on_grid = 0 <= col <= max(r[3] for r in rects) and 0 <= row <= max(r[4] for r in rects)
+        if hit is None and on_grid:
+            # a divider column between panes: keep the current target instead of flickering
+            hit = hovered
+        target = hit if hit != src else None
+
+        if target != hovered:
+            hovered = target
+            # guarded inside tmux so an update racing tmux-pane-drag end cannot outlive the drag
+            update = (f"set -g @paneDropTgt {target} ; select-pane -t {target}" if target
+                      else f"set -gu @paneDropTgt ; select-pane -t {prev_active}")
+            tmux("if", "-F", f"#{{==:#{{@paneDragSrc}},{src}}}", update)
+        time.sleep(POLL_S)
+
+    finish_drag("cancel", client)
+
+
+if __name__ == "__main__":
+    main()

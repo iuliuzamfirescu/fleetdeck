@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Drag a pane by the label in its top border: drop it on another pane to swap
+# the two, on a window pill to move it into that window, or between window
+# pills to make it a new window there.
+#
+#   tmux-pane-drag start <pane> <client>
+#   tmux-pane-drag end <client> <pane released on, or ''>
+#   tmux-pane-drag cancel <client>
+#
+# A release on a pane swaps with that pane. Any other release uses what the
+# window bar hover recorded (tmux-window-bar-drop), or cancels.
+#
+# All drag state is five global options (@paneDragSrc, @paneDragPrevActive,
+# @paneDropTgt, @paneDropWin, @paneDropWinBefore). Every way a drag can finish
+# goes through end, which clears all five in the same command list that reads them. tmux
+# runs one command list atomically, so when the release binding and the hover
+# helper both call end, only the first one sees a drag.
+set -euo pipefail
+
+action="$1"
+shift
+
+case "$action" in
+  start)
+    src="$1"
+    client="$2"
+    prev="$(tmux list-panes -t "$src" -f '#{pane_active}' -F '#{pane_id}')"
+    tmux set -g @paneDragSrc "$src" \; set -g @paneDragPrevActive "$prev" \; refresh-client -t "$client"
+    setsid ~/.local/bin/tmux-pane-drag-hover "$src" "$client" > /dev/null 2>&1 < /dev/null &
+    ;;
+
+  end|cancel)
+    client="$1"
+    drop_pane="${2:-}"
+    IFS='|' read -r src prev drop_win drop_before < <(
+      tmux display -p '#{@paneDragSrc}|#{@paneDragPrevActive}|#{@paneDropWin}|#{@paneDropWinBefore}' \
+        \; set -gu @paneDragSrc \; set -gu @paneDragPrevActive \; set -gu @paneDropTgt \
+        \; set -gu @paneDropWin \; set -gu @paneDropWinBefore
+    )
+    [[ -n "$src" ]] || exit 0
+
+    src_win="$(tmux display -p -t "$src" '#{window_id}' 2>/dev/null || true)"
+    drop_pane_win=""
+    [[ -n "$drop_pane" ]] && drop_pane_win="$(tmux display -p -t "$drop_pane" '#{window_id}' 2>/dev/null || true)"
+
+    dropped=0
+    if [[ -n "$src_win" && "$action" == end ]]; then
+      if [[ -n "$drop_pane" && "$drop_pane" != "$src" && "$drop_pane_win" == "$src_win" ]]; then
+        # -d keeps focus in place, then focus goes to the dragged pane at its new spot
+        tmux swap-pane -d -s "$src" -t "$drop_pane" \; select-pane -t "$src"
+        dropped=1
+      elif [[ -z "$drop_pane" && -n "$drop_win" ]]; then
+        ~/.local/bin/tmux-pane-to-window "$src" join "$drop_win"
+        dropped=1
+      elif [[ -z "$drop_pane" && -n "$drop_before" ]]; then
+        ~/.local/bin/tmux-pane-to-window "$src" new "$drop_before"
+        dropped=1
+      fi
+    fi
+    if (( ! dropped )) && [[ -n "$prev" ]]; then
+      # nothing dropped: the hover helper focused whatever was under the pointer, so put focus back
+      tmux select-pane -t "$prev" 2>/dev/null || true
+    fi
+    tmux refresh-client -t "$client" 2>/dev/null || true
+    ;;
+
+  *)
+    echo "usage: tmux-pane-drag start <pane> <client> | end <client> <pane> | cancel <client>" >&2
+    exit 2
+    ;;
+esac

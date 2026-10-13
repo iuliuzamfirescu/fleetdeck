@@ -10,12 +10,7 @@
 set -euo pipefail
 
 state_file="$1"
-option="$2"
-client="$3"
-move_script="$4"
-move_context="$5"
-source_id="$6"
-source_option="$7"
+client="$2"
 
 mapfile -t dev_ids < <(xinput list 2>/dev/null | grep 'slave  pointer' | grep -oP 'id=\K[0-9]+')
 
@@ -29,12 +24,11 @@ button_down() {
 while sleep 0.03; do
   [[ -f "$state_file" ]] || exit 0
   if ! button_down; then
-    target="$(cat "$state_file" 2>/dev/null || true)"
-    if [[ -n "$target" && "$target" != "$source_id" ]]; then
-      "$move_script" "$move_context" "$source_id" "$target" || true
-    fi
+    # tmux's own release binding normally commits first, from the hover state it has
+    # caught up on, so only step in once tmux's mouse queue has had time to drain
+    sleep 0.5
+    ~/.local/bin/tmux-bar-drag-commit "$client" || true
     rm -f "$state_file" "${state_file}.pid"
-    tmux set -gu "$option" \; set -gu "$source_option" \; refresh-client -S -t "$client"
     break
   fi
 done

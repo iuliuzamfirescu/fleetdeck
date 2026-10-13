@@ -6,12 +6,13 @@
 set -euo pipefail
 
 LOCAL="$HOME/.config/ghostty/local"
-mapfile -t THEMES < <(/snap/bin/ghostty +list-themes | sed -E 's/ \((resources|config)\)$//')
+ghostty="$(command -v ghostty || echo /snap/bin/ghostty)"
+mapfile -t THEMES < <("$ghostty" +list-themes | sed -E 's/ \((resources|config)\)$//')
 
 step=1
 [ "${1:-}" = "--reverse" ] && step=-1
 
-current="$(/snap/bin/ghostty +show-config | grep -oP '^theme = \K.*')"
+current="$("$ghostty" +show-config | grep -oP '^theme = \K.*')"
 
 next_index=0
 count=${#THEMES[@]}

@@ -90,7 +90,7 @@ Panes can also be moved by dragging, either by the name in the pane's top border
 
 - drop on another pane (title drag only) to swap the two; focus stays on the pane you dragged
 - drop on the middle of another window's pill to move the pane into that window, as a new full-height column on its right; the view follows it
-- drop on the outer quarter of any window pill, the gap between two, to open the pane as a new window there; the same insertion marker as a window reorder shows where
+- drop on the outer quarter of any window pill, the gap between two, to open the pane as a new window there, named after the pane; the same insertion marker as a window reorder shows where
 - release anywhere else, or outside the terminal, to cancel
 
 While dragging a title, the dragged pane's title turns peach with a `⇄`, and the pane under the pointer gets a yellow title and a complete yellow outline. A targeted window pill turns yellow. Dropping past the last window pill does nothing, since tmux sends no mouse events for the empty bar there; drop on the right edge of the last pill to put the new window at the end.

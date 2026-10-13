@@ -3,7 +3,8 @@
 # the pill drag.
 #
 #   tmux-pane-to-window <pane> join <window>      new full-height column at that window's right edge
-#   tmux-pane-to-window <pane> new <window|END>   new window of its own, placed before that window or last
+#   tmux-pane-to-window <pane> new <window|END>   new window of its own, placed before that window or last,
+#                                                 named after the pane the way its pill shows it
 set -euo pipefail
 
 src="$1"
@@ -27,11 +28,12 @@ case "$mode" in
     tmux join-pane -h -f -s "$src" -t "$dst"
     ;;
   new)
+    name="$(tmux display -p -t "$src" '#{?#{@paneName},#{@paneName},#{pane_title}}')"
     if [[ "$dst" == END ]]; then
       last="$(tmux list-windows -t "$src" -F '#{window_id}' | tail -1)"
-      tmux break-pane -a -s "$src" -t "$last"
+      tmux break-pane -a -n "$name" -s "$src" -t "$last"
     else
-      tmux break-pane -b -s "$src" -t "$dst"
+      tmux break-pane -b -n "$name" -s "$src" -t "$dst"
     fi
     ;;
 esac

@@ -20,12 +20,17 @@ A tmux + Ghostty setup for running several Claude Code sessions side by side, on
 
 ## Install
 
+Clone the repo and symlink everything into place, so the live config is the repo: edits show up in `git status`, and `git pull` updates the live setup.
+
 ```
-cp tmux.conf ~/.tmux.conf
-mkdir -p ~/.config/ghostty
-cp ghostty.config ~/.config/ghostty/config
-cp bin/* ~/.local/bin/
-chmod +x ~/.local/bin/claude-fleet ~/.local/bin/ghostty-theme-cycle ~/.local/bin/tmux-*
+git clone https://github.com/iuliuzamfirescu/claude-terminal-setup.git ~/claude-terminal-setup
+cd ~/claude-terminal-setup
+ln -sf "$PWD/tmux.conf" ~/.tmux.conf
+mkdir -p ~/.config/ghostty ~/.local/bin
+ln -sf "$PWD/ghostty.config" ~/.config/ghostty/config
+for f in bin/*; do ln -sf "$PWD/$f" ~/.local/bin/; done
+# the directory Ghostty opens in, kept out of the repo
+echo 'command = tmux new-session -A -s main -c /path/to/your/project claude' > ~/.config/ghostty/local
 # merge the busy/idle hooks into your Claude Code settings
 jq -s ".[0] * .[1]" ~/.claude/settings.json claude-hooks.json > /tmp/claude-settings.json && mv /tmp/claude-settings.json ~/.claude/settings.json
 ```
@@ -48,7 +53,7 @@ sudo snap install ghostty --classic
 sudo apt install xdotool
 ```
 
-Edit the `command =` line in `ghostty.config` to point at whatever directory you want Ghostty to drop you into by default. Also edit the `continuum_save.sh` path in `tmux.conf`'s `status-format[0]` line if `~/.tmux/plugins` is not where TPM installs plugins for you.
+Edit `~/.config/ghostty/local` to point at whatever directory you want Ghostty to drop you into by default. `ghostty.config` includes that file last, so anything machine-specific goes there instead of into the repo. Also edit the `continuum_save.sh` path in `tmux.conf`'s `status-format[0]` line if `~/.tmux/plugins` is not where TPM installs plugins for you.
 
 ## tmux keybindings
 

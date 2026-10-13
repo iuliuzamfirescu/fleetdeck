@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Rotate ~/.config/ghostty/config to the next theme in THEMES.
+# Rotate the Ghostty theme to the next one in THEMES.
 # Run, then press Ctrl+Shift+, in Ghostty to apply (its default reload_config keybind).
+# Writes to the untracked ~/.config/ghostty/local, never to the config itself, which is
+# a symlink into this repo: sed -i would replace the link with a plain file.
 set -euo pipefail
 
-CONFIG="$HOME/.config/ghostty/config"
+LOCAL="$HOME/.config/ghostty/local"
 mapfile -t THEMES < <(/snap/bin/ghostty +list-themes | sed -E 's/ \((resources|config)\)$//')
 
 step=1
 [ "${1:-}" = "--reverse" ] && step=-1
 
-current="$(grep -oP '^theme = \K.*' "$CONFIG")"
+current="$(/snap/bin/ghostty +show-config | grep -oP '^theme = \K.*')"
 
 next_index=0
 count=${#THEMES[@]}
@@ -21,5 +23,9 @@ for i in "${!THEMES[@]}"; do
 done
 
 next="${THEMES[$next_index]}"
-sed -i "s/^theme = .*/theme = $next/" "$CONFIG"
+if grep -q '^theme = ' "$LOCAL" 2>/dev/null; then
+  sed -i "s/^theme = .*/theme = $next/" "$LOCAL"
+else
+  echo "theme = $next" >> "$LOCAL"
+fi
 echo "$next"

@@ -6,7 +6,7 @@ Every Claude session gets its own pane or window. Tab bars at the top show every
 
 ## What you get
 
-- **Clickable tab bars.** Windows are listed on the top row, and the panes of the current window are listed under them. Click a tab to switch to it, double-click to rename it, right-click to close it, and drag it to reorder.
+- **Clickable tab bars.** Windows are listed on the top row, and the panes of the current window are listed under them. Click a tab to switch to it, double-click to rename it, right-click to close it, and drag it to reorder. Drag a window onto another window to combine them.
 - **Drag panes around.** Grab a pane by its title, or by its tab, and drop it to swap it with another pane, move it into another window, or turn it into a window of its own.
 - **Idle highlighting.** Tabs, borders and pane backgrounds change color when a Claude session finishes and waits for you.
 - **Claude in one keystroke.** Split shortcuts open a new pane that already runs `claude`.
@@ -126,6 +126,7 @@ The top row lists windows. The row under it lists the panes of the current windo
 - Double-click a tab to rename it.
 - Right-click a window tab for a menu (close, rename, swap, respawn). Right-click a pane tab to close the pane, after a confirmation.
 - Drag a tab onto another to reorder. A marker shows where it will land: the left half of a tab puts it before that tab, and the right half puts it after. Drop on the right half of the last tab to move it to the end.
+- Drag a window tab onto the **middle** of another window tab to combine the two windows. The tab turns yellow while you hover it. On release, every pane of the dragged window moves into the other window, as an evenly split column on its right, and the view follows. The outer quarters of the tab still reorder.
 
 ### Moving panes
 
@@ -186,6 +187,7 @@ The rest of this file is for anyone who wants to change the scripts.
 - `bin/tmux-bar-drag-update`, `bin/tmux-bar-drag-watchdog`, `bin/tmux-bar-drag-commit`: the drag machinery both bars share
 - `bin/tmux-pane-drag`, `bin/tmux-pane-drag-hover`: drag a pane by its title
 - `bin/tmux-window-bar-drop`, `bin/tmux-pane-to-window`: drop a dragged pane on the window bar
+- `bin/tmux-window-merge`: move all panes of a dragged window into the window it is dropped on
 - `bin/tmux-claude-state`, `bin/tmux-claude-idle-loop`: idle detection and highlighting
 - `bin/tmux-continuum-loop`: runs tmux-continuum's save check on its own timer
 - `bin/tmux-resurrect-save-panenames`, `bin/tmux-resurrect-restore-panenames`: keep pane names through a restore
@@ -204,6 +206,8 @@ tmux can't reliably say when the mouse button was released. A release outside th
 `MouseDragEnd1Status`, `MouseUp1Pane` and `MouseUp1Border` call the same commit script (`tmux-bar-drag-commit`), so a release that tmux does see is handled at once. The watchdog waits half a second after the release before it commits, since each snap `tmux` call takes about 80 ms and a fast drag can leave tmux's mouse queue briefly behind. The commit script reads and clears the drag state in a single tmux command list, which tmux runs atomically, so whichever caller comes second finds no drag and does nothing. This matters because moving a pane into another window, unlike a reorder, would do damage if it ran twice.
 
 A plain click on a tab arms a drag on press, and the release disarms it again, so no drag state is left behind.
+
+A window drag over the window bar also runs `tmux-window-bar-drop`, the same hover script a dragged pane uses. Over the middle of another window's tab it records that window as a merge target, and the reorder marker hides. Over the outer quarters it agrees with the reorder marker, so reordering works as before. Like the marker, the merge target stays frozen when the pointer leaves the bar, so a release over a pane still merges.
 
 ### Dragging a pane by its title
 

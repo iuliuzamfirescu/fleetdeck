@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Move every pane of one window into another, as an evenly split column at
+# its right edge, in the source window's pill order, and follow them there.
+# The source window closes once its last pane leaves. Called when a window
+# pill is dropped on the middle of another window's pill.
+set -euo pipefail
+
+src_win="$1"
+dst_win="$2"
+[[ "$src_win" != "$dst_win" ]] || exit 0
+
+# pill order first, then any live pane the stored order doesn't know yet
+order="$(tmux show -w -t "$src_win" -v @paneOrder 2>/dev/null || true)"
+mapfile -t live < <(tmux list-panes -t "$src_win" -F '#{pane_id}')
+panes=()
+for id in $order; do
+  [[ " ${live[*]} " == *" $id "* ]] && panes+=("$id")
+done
+for id in "${live[@]}"; do
+  [[ " ${panes[*]} " == *" $id "* ]] || panes+=("$id")
+done
+
+active="$(tmux list-panes -t "$src_win" -f '#{pane_active}' -F '#{pane_id}')"
+dst_order="$(tmux show -w -t "$dst_win" -v @paneOrder 2>/dev/null || true)"
+
+n=${#panes[@]}
+tmux join-pane -d -h -f -s "${panes[0]}" -t "$dst_win"
+for (( i = 1; i < n; i++ )); do
+  # the new pane takes (n-i)/(n-i+1) of the one above it, so the column ends up evenly split
+  tmux join-pane -d -v -l "$(( 100 * (n - i) / (n - i + 1) ))%" -s "${panes[$i]}" -t "${panes[$((i - 1))]}"
+done
+
+# extend the destination's pill order explicitly, rather than leave tmux-pane-bar to guess it
+if [[ -n "$dst_order" ]]; then
+  tmux set -w -t "$dst_win" @paneOrder "$dst_order ${panes[*]}"
+fi
+tmux select-window -t "$dst_win" \; select-pane -t "$active"
+
+rm -f "/tmp/tmux-pane-bar-spans-${src_win}" "/tmp/tmux-pane-bar-insert-${src_win}"

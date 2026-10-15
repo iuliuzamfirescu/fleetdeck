@@ -24,6 +24,8 @@ if [[ -n "$src_pane" ]]; then
   elif [[ -n "$pane_win" && -n "$insert_pane" && "$insert_pane" != "$src_pane" ]]; then
     ~/.local/bin/tmux-pane-bar-move "$pane_win" "$src_pane" "$insert_pane"
   fi
+elif [[ -n "$src_win" && -n "$drop_win" && "$drop_win" != "$src_win" ]]; then
+  ~/.local/bin/tmux-window-merge "$src_win" "$drop_win"
 elif [[ -n "$src_win" && -n "$insert_win" && "$insert_win" != "$src_win" ]]; then
   sess="$(tmux display -p -t "$src_win" '#{session_name}' 2>/dev/null || true)"
   [[ -n "$sess" ]] && ~/.local/bin/tmux-window-bar-move "$sess" "$src_win" "$insert_win"

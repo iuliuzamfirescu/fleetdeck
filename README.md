@@ -154,8 +154,8 @@ When a Claude session is waiting for your input, the bars, the pane border and t
 
 | | Busy | Idle |
 |---|---|---|
-| Tab, not selected | dark | dark amber |
-| Tab, selected | lavender | amber |
+| Tab, not selected | dark | deep turquoise |
+| Tab, selected | lavender | light turquoise |
 | Pane border | gray (magenta when focused) | mauve (light mauve when focused) |
 | Pane background | normal | blue-gray tint |
 

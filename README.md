@@ -1,6 +1,8 @@
-# fleetdeck
+# muxorcist
 
-The deck you run a fleet of [Claude Code](https://claude.com/claude-code) sessions from: a tmux + Ghostty setup for running several of them side by side on Linux.
+*The power of tmux compels you.*
+
+A tmux + Ghostty setup for running several [Claude Code](https://claude.com/claude-code) sessions side by side on Linux.
 
 Every Claude session gets its own pane or window. Tab bars at the top show every window and every pane, and you can click and drag them. Any session that is waiting for your input lights up, so you can see which one needs you without checking each pane.
 
@@ -38,8 +40,8 @@ Every Claude session gets its own pane or window. Tab bars at the top show every
 2. Clone the repo and symlink everything into place. With symlinks, the live config *is* the repo: your edits show up in `git status`, and `git pull` updates the live setup. Existing config files are kept as `.bak`.
 
    ```
-   git clone https://github.com/iuliuzamfirescu/fleetdeck.git ~/fleetdeck
-   cd ~/fleetdeck
+   git clone https://github.com/iuliuzamfirescu/muxorcist.git ~/muxorcist
+   cd ~/muxorcist
    for f in ~/.tmux.conf ~/.config/ghostty/config; do [ -e "$f" ] && [ ! -L "$f" ] && mv "$f" "$f.bak"; done
    mkdir -p ~/.config/ghostty ~/.local/bin
    ln -sf "$PWD/tmux.conf" ~/.tmux.conf
@@ -78,7 +80,7 @@ Every Claude session gets its own pane or window. Tab bars at the top show every
 ### Updating
 
 ```
-git -C ~/fleetdeck pull
+git -C ~/muxorcist pull
 ```
 
 Then press `Ctrl-a r` in tmux to reload the config.
@@ -87,7 +89,7 @@ Then press `Ctrl-a r` in tmux to reload the config.
 
 ```
 rm ~/.tmux.conf ~/.config/ghostty/config
-find ~/.local/bin -lname "$HOME/fleetdeck/*" -delete
+find ~/.local/bin -lname "$HOME/muxorcist/*" -delete
 ```
 
 Then restore the `.bak` files if you had any.

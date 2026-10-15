@@ -126,7 +126,7 @@ The top row lists windows. The row under it lists the panes of the current windo
 
 - Click a tab to switch to it.
 - Double-click a tab to rename it.
-- Right-click a window tab for a menu (close, rename, swap, respawn). Right-click a pane tab to close the pane, after a confirmation.
+- Right-click a tab for a menu: swap it with the tab to its left or right, swap it with the marked one, close, respawn, mark, rename, or open a new one after it or at the end. Window tabs and pane tabs get the same menu. For a pane, swapping moves its tab in the bar, and a new pane splits off to the right.
 - Middle-click (scroll wheel click) a tab to close that pane or window at once, with no confirmation.
 - Drag a tab onto another to reorder. A marker shows where it will land: the left half of a tab puts it before that tab, and the right half puts it after. Drop on the right half of the last tab to move it to the end.
 - Drag a window tab onto the **middle** of another window tab to combine the two windows. The tab turns yellow while you hover it. On release, every pane of the dragged window moves into the other window, as an evenly split column on its right, and the view follows. The outer quarters of the tab still reorder.
@@ -187,6 +187,7 @@ The rest of this file is for anyone who wants to change the scripts.
 - `claude-hooks.json`: Claude Code hooks that report busy/idle per pane
 - `bin/tmux-window-bar`, `bin/tmux-pane-bar`: render the two tab bars
 - `bin/tmux-window-bar-move`, `bin/tmux-pane-bar-move`: reorder windows or pane tabs on drop
+- `bin/tmux-pane-bar-menu`: the pane tab menu items that follow the tab order (swap left/right, new after)
 - `bin/tmux-bar-drag-update`, `bin/tmux-bar-drag-watchdog`, `bin/tmux-bar-drag-commit`: the drag machinery both bars share
 - `bin/tmux-pane-drag`, `bin/tmux-pane-drag-hover`: drag a pane by its title
 - `bin/tmux-window-bar-drop`, `bin/tmux-pane-to-window`: drop a dragged pane on the window bar

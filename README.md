@@ -6,7 +6,7 @@ Every Claude session gets its own pane or window. Tab bars at the top show every
 
 ## What you get
 
-- **Clickable tab bars.** Windows are listed on the top row, and the panes of the current window are listed under them. Click a tab to switch to it, double-click to rename it, right-click to close it, and drag it to reorder. Drag a window onto another window to combine them.
+- **Clickable tab bars.** Windows are listed on the top row, and the panes of the current window are listed under them. Click a tab to switch to it, double-click to rename it, right-click or middle-click to close it, and drag it to reorder. Drag a window onto another window to combine them.
 - **Drag panes around.** Grab a pane by its title, or by its tab, and drop it to swap it with another pane, move it into another window, or turn it into a window of its own.
 - **Idle highlighting.** Tabs, borders and pane backgrounds change color when a Claude session finishes and waits for you.
 - **Claude in one keystroke.** Split shortcuts open a new pane that already runs `claude`.
@@ -125,6 +125,7 @@ The top row lists windows. The row under it lists the panes of the current windo
 - Click a tab to switch to it.
 - Double-click a tab to rename it.
 - Right-click a window tab for a menu (close, rename, swap, respawn). Right-click a pane tab to close the pane, after a confirmation.
+- Middle-click (scroll wheel click) a tab to close that pane or window at once, with no confirmation.
 - Drag a tab onto another to reorder. A marker shows where it will land: the left half of a tab puts it before that tab, and the right half puts it after. Drop on the right half of the last tab to move it to the end.
 - Drag a window tab onto the **middle** of another window tab to combine the two windows. The tab turns yellow while you hover it. On release, every pane of the dragged window moves into the other window, as an evenly split column on its right, and the view follows. The outer quarters of the tab still reorder.
 
